@@ -233,14 +233,4 @@ ENV/
 # Project specific
 examples/data
 .ckpt
-/common_tool.py
-/run_evaluation.py
-/data_draw.py
-/run.sh
-/tsne/
-/draw.py
-/draw_paper.py
-/draw_atm.py
-/draw_atm_ero.py
-/gradual_lines.png
-/draw_atm_dgi.py
+
