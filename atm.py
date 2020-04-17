@@ -74,8 +74,8 @@ def main(args):
         # 开始训练
         reid_start = time.time()
         train_reid_data = l_data+s_data  # 在这个过程中,保持了one_shot不变了
-        if step == 0 and not args.is_baseline:
-            reid.resume(osp.join(reid_path, 'Dissimilarity_step_0.ckpt'), 0)
+        if (step == 0 or step==1) and not args.is_baseline:
+            reid.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step)), step)
         else:
             reid.train(train_reid_data, step, tagper=0, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
 
