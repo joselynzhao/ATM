@@ -1,15 +1,3 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
-'''
-@AUTHOR:Joselyn Zhao
-@CONTACT:zhaojing17@foxmail.com
-@HOME_PAGE:joselynzhao.top
-@SOFTWERE:PyCharm
-@FILE:atm02.py
-@TIME:2020/4/17 22:57
-@DES:
-'''
-
 from __future__ import print_function, absolute_import
 from reid.snatch import *
 from reid import datasets
@@ -199,5 +187,5 @@ if __name__ == '__main__':
 
 
     '''
-    python3.6 atm.py  --total_step 5 --train_tagper_step 3 --exp_order 1
+    python3.6 atm02.py  --total_step 5 --train_tagper_step 3 --exp_order 1
     '''
