@@ -37,6 +37,7 @@ def main(args):
     #声明伪标签数据列表
     p_data = []
     s_data = [] # 表示选择出来的伪标签样本
+    selected_idx_for_tagper = []
     mv_num = math.ceil(len(u_data) / args.total_step)  # 最后一轮必定不足add_num的数量
     tagper_num = math.ceil(len(u_data) / args.train_tagper_step)
     # 输出实验信息
@@ -100,17 +101,25 @@ def main(args):
         #     train_tagper_data = one_shot+l_data+new_train_data
         #     tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
         '''所有的tagper都重新训练'''
-        tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step)), step)
-        selected_idx = tagper.select_top_data(pred_score, min(tagper_num * (step + 1), len(u_data)))  # 训练tagper的数量也递增
-        new_train_data = tagper.generate_new_train_data_only(selected_idx, pred_y,
-                                                             u_data)  # 这个选择准确率应该是和前面的label_pre是一样的.
-        train_tagper_data = l_data + new_train_data
-        tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
+        if len(selected_idx_for_tagper) == len(u_data): # 这就意味着上一次就已经把所有的样本加进去了
+            # 此时停止对tagper的训练。
+            tmAP, ttop1, ttop5, ttop10, ttop20 = mAP, top1, top5, top10, top20
+            tlabel_pre = label_pre
+            tpred_score = pred_score
+            tpred_y = pred_y
 
-        # 开始评估
-        # mAP, top1, top5, top10, top20 =0,0,0,0,0
-        tmAP, ttop1, ttop5, ttop10, ttop20 = tagper.evaluate(dataset_all.query, dataset_all.gallery)
-        tpred_y, tpred_score, tlabel_pre = tagper.estimate_label(u_data, l_data)
+        else:
+            tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step)), step)
+            selected_idx_for_tagper = tagper.select_top_data(pred_score, min(tagper_num * (step + 1), len(u_data)))  # 训练tagper的数量也递增
+            new_train_data = tagper.generate_new_train_data_only(selected_idx_for_tagper, pred_y,
+                                                                 u_data)  # 这个选择准确率应该是和前面的label_pre是一样的.
+            train_tagper_data = l_data + new_train_data
+            tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
+
+            # 开始评估
+            # mAP, top1, top5, top10, top20 =0,0,0,0,0
+            tmAP, ttop1, ttop5, ttop10, ttop20 = tagper.evaluate(dataset_all.query, dataset_all.gallery)
+            tpred_y, tpred_score, tlabel_pre = tagper.estimate_label(u_data, l_data)
 
         # 下面正对 reid 移动数据.
         selected_idx = tagper.select_top_data(tpred_score, min(mv_num * (step + 1), len(u_data)))  # 从所有 u_data 里面选
@@ -158,8 +167,8 @@ if __name__ == '__main__':
     working_dir = os.path.dirname(os.path.abspath(__file__))  # 有用绝对地址
     parser.add_argument('--data_dir', type=str, metavar='PATH', default=os.path.join(working_dir, 'data'))  # 加载数据集的根目录
     parser.add_argument('--logs_dir', type=str, metavar='PATH', default=os.path.join(working_dir, 'logs'))  # 保持日志根目录
-    parser.add_argument('--exp_name', type=str, default="atm01")
-    parser.add_argument('--exp_order', type=str, default="1")
+    parser.add_argument('--exp_name', type=str, default="atm")
+    parser.add_argument('--exp_order', type=str, default="0")
     parser.add_argument('--resume', type=bool, default=False)
     parser.add_argument('--mode', type=str, choices=["Classification", "Dissimilarity"],
                         default="Dissimilarity")  # 这个考虑要不要取消掉
@@ -168,7 +177,7 @@ if __name__ == '__main__':
     parser.add_argument('--is_baseline', type=bool, default=False)  # 默认不是baseline
     # the key parameters is following
     parser.add_argument('--total_step', type=int, default=5)  # 默认总的五次迭代.
-    parser.add_argument('--train_tagper_step', type=float, default=5)  # 用于训练 tagper的 step 数
+    parser.add_argument('--train_tagper_step', type=float, default=3)  # 用于训练 tagper的 step 数
     parser.add_argument('--epoch', type=int, default=70)
     parser.add_argument('--step_size', type=int, default=55)
     parser.add_argument('-b', '--batch_size', type=int, default=16)
@@ -180,3 +189,8 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--l', type=float)
     parser.add_argument('--continuous', action="store_true")
     main(parser.parse_args())
+
+
+    ```
+    python3.6 atm.py  --total_step 5 --train_tagper_step 3 --exp_order 0
+    ```
