@@ -31,17 +31,23 @@ def main(args):
 
     # get all the labeled and unlabeled data for training
     dataset_all = datasets.create(args.dataset, osp.join(args.data_dir, args.dataset))
-    one_shot, u_data = get_one_shot_in_cam1(dataset_all, load_path="./examples/oneshot_{}_used_in_paper.pickle".format(
+    l_data, u_data = get_one_shot_in_cam1(dataset_all, load_path="./examples/oneshot_{}_used_in_paper.pickle".format(
         dataset_all.name))
-    l_data = []
-    total_step = args.total_step
-    mv_num = math.ceil(len(u_data) / total_step)  # 最后一轮必定不足add_num的数量
+
+    #声明伪标签数据列表
+    p_data = []
+    s_data = [] # 表示选择出来的伪标签样本
+    mv_num = math.ceil(len(u_data) / args.total_step)  # 最后一轮必定不足add_num的数量
     tagper_num = math.ceil(len(u_data) / args.train_tagper_step)
-    # 输出该轮训练关键的提示信息
-    print(
-        "{} training begin with dataset:{},batch_size:{},epoch:{},step_size:{},max_frames:{},total_step:{},add {} sample each step.".format(
-            args.exp_name, args.dataset, args.batch_size, args.epoch, args.step_size, args.max_frames, total_step,
-            mv_num))
+    # 输出实验信息
+    print("{}/{} is training with {}, the max_frames is {}, and will be saved to {}".format(args.exp_name,args.exp_order,args.dataset,args.max_frames,args.logs_dir))
+    # 输出超参信息
+    print("parameters are setted as follows")
+    print("\ttotal_step:\t{}".format(args.total_step))
+    print("\ttrain_tagper_step:\t{}".format(args.train_tagper_step))
+    print("\tepoch:\t{}".format(args.epoch))
+    print("\tstep_size:\t{}".format(args.step_size))
+    print("\tbatch_size:\t{}".format(args.batch_size))
 
     # 指定输出文件
     # 第三部分要说明关键参数的设定
@@ -49,40 +55,24 @@ def main(args):
     sys.stdout = Logger(osp.join(reid_path, 'log' + time.strftime(".%m_%d_%H-%M-%S") + '.txt'))
     data_file = codecs.open(osp.join(reid_path, 'data.txt'), mode='a')
     time_file = codecs.open(osp.join(reid_path, 'time.txt'), mode='a')
-    # save_path = reid_path
-    tagper_path = osp.join(reid_path, 'tagper')
     tagper_file = codecs.open(osp.join(reid_path, "tagper_data.txt"), mode='a')
-
-    # resume_step, ckpt_file = -1, ''
-    # if args.resume:  # 重新训练的时候用
-    #     resume_step, ckpt_file = resume(args)
 
     # initial the EUG algorithm
     reid = EUG(model_name=args.arch, batch_size=args.batch_size, mode=args.mode, num_classes=dataset_all.num_train_ids,
-               data_dir=dataset_all.images_dir, l_data=one_shot, u_data=u_data, save_path=reid_path,
+               data_dir=dataset_all.images_dir, l_data=l_data, u_data=u_data, save_path=reid_path,
                max_frames=args.max_frames)
     tagper = EUG(model_name=args.arch, batch_size=args.batch_size, mode=args.mode,
                  num_classes=dataset_all.num_train_ids,
-                 data_dir=dataset_all.images_dir, l_data=one_shot, u_data=u_data, save_path=reid_path,
+                 data_dir=dataset_all.images_dir, l_data=l_data, u_data=u_data, save_path=reid_path,
                  max_frames=args.max_frames)
     # 开始的时间记录
     exp_start = time.time()
-    for step in range(total_step):
-
-        print("{} training begin with dataset:{},batch_size:{},epoch:{},step:{}/{} saved to {}.".format(args.exp_name,
-                                                                                                        args.dataset,
-                                                                                                        args.batch_size,
-                                                                                                        args.epoch,
-                                                                                                        step + 1,
-                                                                                                        total_step,
-                                                                                                        reid_path))
-        print("key parameters contain mv_num:{} tagper_num:{} len(l_data):{},len(u_data):{}".format(mv_num, tagper_num,
-                                                                                                    len(l_data),
-                                                                                                    len(u_data)))
+    for step in range(args.total_step+1): #加1是为了保证所有的数据都能加入到训练集中
+        print("---------------------------------training step:{}/{}-------------------------------------".format(step+1,args.total_step+1))
 
         # 开始训练
-        train_reid_data = one_shot + l_data  # 在这个过程中,保持了one_shot不变了
         reid_start = time.time()
+        train_reid_data = l_data+s_data  # 在这个过程中,保持了one_shot不变了
         if step == 0 and not args.is_baseline:
             reid.resume(osp.join(reid_path, 'Dissimilarity_step_0.ckpt'), 0)
         else:
@@ -92,17 +82,12 @@ def main(args):
         # mAP, top1, top5, top10, top20 =0,0,0,0,0
         mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery)
         # 测试 train tagper之前的select_pre
-        pred_y, pred_score, label_pre = reid.estimate_label_atm3(u_data, l_data, one_shot)  # 针对u_data进行标签估计
+        pred_y, pred_score, label_pre = reid.estimate_label(u_data, l_data)  # 针对u_data进行标签估计
         selected_idx = reid.select_top_data(pred_score, min(mv_num * (step + 1), len(u_data)))
         select_pre = reid.get_select_pre(selected_idx, pred_y, u_data)
 
         reid_end = time.time()
-        data_file.write(
-            "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{} label_pre:{:.2%} select_pre:{:.2%}\n".format(
-                int(step + 1), mAP, top1, top5, top10, top20, len(l_data), label_pre, select_pre))
-        print(
-            "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{} label_pre:{:.2%} select_pre:{:.2%} \n".format(
-                int(step + 1), mAP, top1, top5, top10, top20, len(l_data), label_pre, select_pre))
+
 
         tagper_start = time.time()
         '''第一个tagper可以resume'''
@@ -119,25 +104,32 @@ def main(args):
         selected_idx = tagper.select_top_data(pred_score, min(tagper_num * (step + 1), len(u_data)))  # 训练tagper的数量也递增
         new_train_data = tagper.generate_new_train_data_only(selected_idx, pred_y,
                                                              u_data)  # 这个选择准确率应该是和前面的label_pre是一样的.
-        train_tagper_data = one_shot + new_train_data
+        train_tagper_data = l_data + new_train_data
         tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
 
         # 开始评估
         # mAP, top1, top5, top10, top20 =0,0,0,0,0
-        mAP, top1, top5, top10, top20 = tagper.evaluate(dataset_all.query, dataset_all.gallery)
-        pred_y, pred_score, label_pre = tagper.estimate_label_atm3(u_data, l_data, one_shot)
+        tmAP, ttop1, ttop5, ttop10, ttop20 = tagper.evaluate(dataset_all.query, dataset_all.gallery)
+        tpred_y, tpred_score, tlabel_pre = tagper.estimate_label(u_data, l_data)
 
         # 下面正对 reid 移动数据.
-        selected_idx = tagper.select_top_data(pred_score, min(mv_num * (step + 1), len(u_data)))  # 从所有 u_data 里面选
-        l_data, select_pre = tagper.move_unlabel_to_label_cpu(selected_idx, pred_y, u_data)
+        selected_idx = tagper.select_top_data(tpred_score, min(mv_num * (step + 1), len(u_data)))  # 从所有 u_data 里面选
+        s_data, tselect_pre = tagper.move_unlabel_to_label_cpu(selected_idx, tpred_y, u_data)
         tapger_end = time.time()
+
+        data_file.write(
+            "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{} label_pre:{:.2%} select_pre:{:.2%}\n".format(
+                int(step + 1), mAP, top1, top5, top10, top20, len(l_data), label_pre, select_pre))
+        print(
+            "reid step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{} label_pre:{:.2%} select_pre:{:.2%} \n".format(
+                int(step + 1), mAP, top1, top5, top10, top20, len(l_data), label_pre, select_pre))
 
         tagper_file.write(
             "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{}  label_pre:{:.2%} select_pre:{:.2%}\n".format(
-                int(step + 1), mAP, top1, top5, top10, top20, len(l_data), label_pre, select_pre))
+                int(step + 1), tmAP, ttop1, ttop5, ttop10, ttop20, len(s_data), tlabel_pre, tselect_pre))
         print(
-            "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{} label_pre:{:.2%} select_pre:{:.2%}\n".format(
-                int(step + 1), mAP, top1, top5, top10, top20, len(l_data), label_pre, select_pre))
+            "tagper step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{} label_pre:{:.2%} select_pre:{:.2%}\n".format(
+                int(step + 1), tmAP, ttop1, ttop5, ttop10, ttop20, len(s_data), tlabel_pre, tselect_pre))
 
         if args.clock:
             reid_time = reid_end - reid_start
@@ -160,26 +152,26 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Snatch Strategy')
+    parser = argparse.ArgumentParser(description='ATM')
     parser.add_argument('-d', '--dataset', type=str, default='DukeMTMC-VideoReID', choices=datasets.names())  # s
-    parser.add_argument('-b', '--batch-size', type=int, default=16)
-    parser.add_argument('--epoch', type=int, default=70)
-    parser.add_argument('--step_size', type=int, default=55)
-    working_dir = os.path.dirname(os.path.abspath(__file__))
+
+    working_dir = os.path.dirname(os.path.abspath(__file__))  # 有用绝对地址
     parser.add_argument('--data_dir', type=str, metavar='PATH', default=os.path.join(working_dir, 'data'))  # 加载数据集的根目录
     parser.add_argument('--logs_dir', type=str, metavar='PATH', default=os.path.join(working_dir, 'logs'))  # 保持日志根目录
-    parser.add_argument('--exp_name', type=str, default="gradully_supplement")
+    parser.add_argument('--exp_name', type=str, default="atm01")
     parser.add_argument('--exp_order', type=str, default="1")
     parser.add_argument('--resume', type=bool, default=False)
     parser.add_argument('--mode', type=str, choices=["Classification", "Dissimilarity"],
                         default="Dissimilarity")  # 这个考虑要不要取消掉
     parser.add_argument('--max_frames', type=int, default=400)
     parser.add_argument('--clock', type=bool, default=True)  # 是否记时
-    parser.add_argument('--gdraw', type=bool, default=False)  # 是否实时绘图
+    parser.add_argument('--is_baseline', type=bool, default=False)  # 默认不是baseline
     # the key parameters is following
     parser.add_argument('--total_step', type=int, default=5)  # 默认总的五次迭代.
     parser.add_argument('--train_tagper_step', type=float, default=5)  # 用于训练 tagper的 step 数
-    parser.add_argument('--is_baseline', type=bool, default=False)  # 默认不是baseline
+    parser.add_argument('--epoch', type=int, default=70)
+    parser.add_argument('--step_size', type=int, default=55)
+    parser.add_argument('-b', '--batch_size', type=int, default=16)
 
     # 下面是暂时不知道用来做什么的参数
     parser.add_argument('-a', '--arch', type=str, default='avg_pool', choices=models.names())  # eug model_name
