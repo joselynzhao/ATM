@@ -37,7 +37,7 @@ def main(args):
     #声明伪标签数据列表
     p_data = []
     s_data = [] # 表示选择出来的伪标签样本
-    selected_idx_for_tagper = []
+    new_train_data = []
     mv_num = math.ceil(len(u_data) / args.total_step)  # 最后一轮必定不足add_num的数量
     tagper_num = math.ceil(len(u_data) / args.train_tagper_step)
     # 输出实验信息
@@ -101,7 +101,7 @@ def main(args):
         #     train_tagper_data = one_shot+l_data+new_train_data
         #     tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
         '''所有的tagper都重新训练'''
-        if len(selected_idx_for_tagper) == len(u_data): # 这就意味着上一次就已经把所有的样本加进去了
+        if len(new_train_data) == len(u_data): # 这就意味着上一次就已经把所有的样本加进去了
             # 此时停止对tagper的训练。
             tmAP, ttop1, ttop5, ttop10, ttop20 = mAP, top1, top5, top10, top20
             tlabel_pre = label_pre
@@ -109,12 +109,15 @@ def main(args):
             tpred_y = pred_y
 
         else:
-            tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step)), step)
-            selected_idx_for_tagper = tagper.select_top_data(pred_score, min(tagper_num * (step + 1), len(u_data)))  # 训练tagper的数量也递增
-            new_train_data = tagper.generate_new_train_data_only(selected_idx_for_tagper, pred_y,
-                                                                 u_data)  # 这个选择准确率应该是和前面的label_pre是一样的.
-            train_tagper_data = l_data + new_train_data
-            tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
+            if step != 0:
+                tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step)), step)
+                selected_idx_for_tagper = tagper.select_top_data(pred_score, min(tagper_num * (step + 1), len(u_data)))  # 训练tagper的数量也递增
+                new_train_data = tagper.generate_new_train_data_only(selected_idx_for_tagper, pred_y,
+                                                                     u_data)  # 这个选择准确率应该是和前面的label_pre是一样的.
+                train_tagper_data = l_data + new_train_data
+                tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
+            else: # 如果是0 就是直接resume
+                tagper.resume(osp.join(reid_path,'tagper1','Dissimilarity_step_{}.ckpt'.format(step)), step)
 
             # 开始评估
             # mAP, top1, top5, top10, top20 =0,0,0,0,0
