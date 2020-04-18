@@ -10,7 +10,7 @@ def resume(args):
     import re
     pattern = re.compile(r'step_(\d+)\.ckpt')
     start_step = -1
-    ckpt_file = ""
+    ckpt_file = ""c
 
     # find start step
     files = os.listdir(osp.join("logs",args.dataset,args.exp_name,args.exp_order))

@@ -15,7 +15,7 @@ from reid.utils.serialization import load_checkpoint
 from torch import nn
 import time
 import math
-import picklec
+import pickle
 import time
 
 import matplotlib.pyplot as plt
@@ -187,5 +187,5 @@ if __name__ == '__main__':
 
 
     '''
-    python3.6 atm02.py  --total_step 5 --train_tagper_step 3 --exp_order 1
+    python3.6 atm03.py  --total_step 5 --train_tagper_step 3 --exp_order 1
     '''
