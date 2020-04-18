@@ -83,7 +83,7 @@ def main(args):
         # mAP, top1, top5, top10, top20 =0,0,0,0,0
         mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery)
         # 测试 train tagper之前的select_pre
-        pred_y, pred_score, label_pre = reid.estimate_label(u_data, l_data)  # 针对u_data进行标签估计
+        pred_y, pred_score, label_pre = reid.estimate_label_atm3(u_data, s_data,l_data)  # 针对u_data进行标签估计
         selected_idx = reid.select_top_data(pred_score, min(mv_num * (step + 1), len(u_data)))
         select_pre = reid.get_select_pre(selected_idx, pred_y, u_data)
 
@@ -114,7 +114,7 @@ def main(args):
         # 开始评估
         # mAP, top1, top5, top10, top20 =0,0,0,0,0
         tmAP, ttop1, ttop5, ttop10, ttop20 = tagper.evaluate(dataset_all.query, dataset_all.gallery)
-        tpred_y, tpred_score, tlabel_pre = tagper.estimate_label(u_data, l_data)
+        tpred_y, tpred_score, tlabel_pre = tagper.estimate_label_atm3(u_data, s_data,l_data)
 
         # 下面正对 reid 移动数据.
         selected_idx = tagper.select_top_data(tpred_score, min(mv_num * (step + 1), len(u_data)))  # 从所有 u_data 里面选
@@ -187,5 +187,5 @@ if __name__ == '__main__':
 
 
     '''
-    python3.6 atm03.py  --total_step 5 --train_tagper_step 3 --exp_order 1
+    python3.6 atm03.py  --total_step 5 --train_tagper_step 3 --exp_order 2
     '''
