@@ -3,17 +3,20 @@ import codecs
 import os.path as osp
 import math
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 
 class drawer01():
-    def __inti__(self,dataset = 'DukeMTMC-VideoReID', exp_name = 'ATM'):
+    def __init__(self,dataset = 'DukeMTMC-VideoReID', exp_name = 'atm'):
         self.dataset =dataset
         self.exp_name = exp_name
-        self.exp_path = osp.join('log',self.dataset,self.exp_name)
+        self.exp_path = osp.join('logs',self.dataset,self.exp_name)
+        # self.group_list = []
+    # def init(self):
         self.__get_group_list()
     def __get_group_list(self):
-        all_content = os.listdir(self.exp_path).sort()
+        all_content = os.listdir(self.exp_path)
         self.group_list =[group for group in all_content if not os.path.isfile(osp.join(self.exp_path,group))]
     def generate_formdata(self,exp_order): # 指定数据组生成格式数据
         pass
@@ -30,13 +33,22 @@ class drawer01():
         format_file = codecs.open(save_path,'w')
         datas = file.readlines()
         for i in range(len(datas)):
-            datas[i] = datas[i].strip()
-            datas[i] =[i.split(':')[1].strip('%') for i in datas[i].split(' ')]  #只取数值
+            datas[i] = datas[i].strip().split(' ')
+            # datas[i] = datas[i]
+            datas[i] =[float(k.split(':')[1].strip('%')) for k in datas[i]]  #只取数值
+        # datas = np.aray(datas)
+        print(datas)
         name_list = ['step','Rank-1','Rank-5','Rank-10','Rank_20','num_selected','label_pre','select_pre']
         format_file.write("\"length\":{},".format(len(datas)))
         format_file.write("\"title\":\"{}\",".format(self.exp_name + '_' + group))
         for i in range(len(name_list)):
-            format_file.write("\"{}\":{}".format(name_list[i]),datas[:,i])
+            data = [datas[k][i] for k in range(len(datas))]
+            format_file.write("\"{}\":\"{}\",".format(name_list[i],data))
+
+if __name__ =='__main__':
+    drawer = drawer01()
+    # drawer.init()
+    drawer.generate_formdata_forall()
 
 
 
