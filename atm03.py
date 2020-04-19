@@ -101,15 +101,16 @@ def main(args):
         #     train_tagper_data = one_shot+l_data+new_train_data
         #     tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
         '''所有的tagper都重新训练'''
-        if step != 0:
+        # if step != 0:
+        if True:
             tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step)), step)
             selected_idx_for_tagper = tagper.select_top_data(pred_score, min(tagper_num * (step + 1), len(u_data)))  # 训练tagper的数量也递增
             new_train_data = tagper.generate_new_train_data_only(selected_idx_for_tagper, pred_y,
                                                                  u_data)  # 这个选择准确率应该是和前面的label_pre是一样的.
             train_tagper_data = l_data + new_train_data
             tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
-        else: # 如果是0 就是直接resume
-            tagper.resume(osp.join(reid_path,'tagper1','Dissimilarity_step_{}.ckpt'.format(step)), step)
+        # else: # 如果是0 就是直接resume
+        #     tagper.resume(osp.join(reid_path,'tagper1','Dissimilarity_step_{}.ckpt'.format(step)), step)
 
         # 开始评估
         # mAP, top1, top5, top10, top20 =0,0,0,0,0
@@ -138,7 +139,7 @@ def main(args):
         if args.clock:
             reid_time = reid_end - reid_start
             tagper_time = tapger_end - tagper_start
-            step_time = tapger_end + reid_start
+            step_time = tapger_end - reid_start
             time_file.write(
                 "step:{}  reid_time:{} tagper_time:{} step_time:{}\n".format(int(step + 1), reid_time, tagper_time,
                                                                              step_time))
