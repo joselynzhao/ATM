@@ -128,5 +128,5 @@ if __name__ =='__main__':
     # drawer.generate_formdata_for_group_list([0,1,2,3])
     # drawer.compare_reid_and_tagper([0])
     # drawer.compare_train_list([0,1,2])
-    drawer.get_top_value_for_all()
+    drawer.get_top_value_for_all(is_tagper=1)
 
