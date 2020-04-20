@@ -189,4 +189,5 @@ if __name__ == '__main__':
 
     '''
     python3.6 atm03.py  --total_step 5 --train_tagper_step 3 --exp_order 2
+    python3.6 atm03.py  --total_step 8 --train_tagper_step 4 --exp_order 3
     '''
