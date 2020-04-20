@@ -130,7 +130,7 @@ def main(args):
                 int(step + 1), mAP, top1, top5, top10, top20, len(s_data), label_pre, select_pre))
 
         tagper_file.write(
-            "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{}  label_pre:{:.2%} select_pre:{:.2%}\n".format(
+            "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{} label_pre:{:.2%} select_pre:{:.2%}\n".format(
                 int(step + 1), tmAP, ttop1, ttop5, ttop10, ttop20, len(s_data), tlabel_pre, tselect_pre))
         print(
             "tagper step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{} label_pre:{:.2%} select_pre:{:.2%}\n".format(
