@@ -85,32 +85,19 @@ def main(args):
         # mAP, top1, top5, top10, top20 =0,0,0,0,0
         mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery)
         # 测试 train tagper之前的select_pre
-        pred_y, pred_score, label_pre = reid.estimate_label_atm3(u_data, s_data,l_data)  # 针对u_data进行标签估计
-        selected_idx = reid.select_top_data(pred_score, min(mv_num * (step + 1), len(u_data)))
-
-
+        pred_y, pred_score, label_pre,dists = reid.estimate_label_dist(u_data, l_data)
+        # selected_idx = reid.select_top_data(pred_score, min(mv_num * (step + 1), len(u_data)))
+        new_nums_to_select =  min(mv_num * (step + 1), len(u_data))
         if step < args.stop_vari_step:
             real_percent_vari = min(
                 (1 - args.percent_vari) * (step + 1) / (args.stop_vari_step + 1) + args.percent_vari, 1)
-            new_expend_nums_to_select = min(len(u_data), math.ceil(min(mv_num * (step + 1), len(u_data)) / real_percent_vari))
+            new_expend_nums_to_select = min(len(u_data), math.ceil(new_nums_to_select / real_percent_vari))
             selected_idx = reid.select_top_data_nlvm_b1(pred_score, dists, new_expend_nums_to_select, new_nums_to_select)
         else:
             real_percent_vari = 1
             new_expend_nums_to_select = 0
-            selected_idx = eug.select_top_data(pred_score, new_nums_to_select)
-        new_train_data, select_pre = eug.generate_new_train_data(selected_idx, pred_y)
-
-
-
-
-
-
-
-
-
-
-
-
+            selected_idx = reid.select_top_data(pred_score, new_nums_to_select)
+        # new_train_data, select_pre = reid.generate_new_train_data(selected_idx, pred_y,u_data)
         select_pre = reid.get_select_pre(selected_idx, pred_y, u_data)
 
         reid_end = time.time()
@@ -130,7 +117,13 @@ def main(args):
         # if step != 0:
         if True:
             tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step)), step)
-            selected_idx_for_tagper = tagper.select_top_data(pred_score, min(tagper_num * (step + 1), len(u_data)))  # 训练tagper的数量也递增
+            select_num_for_tagper = min(tagper_num * (step + 1), len(u_data))
+            real_percent_vari = min(
+                (1 - args.percent_vari) * (step + 1) / (args.train_tagper_step + 1) + args.percent_vari, 1)
+            expand_num_for_tagper = min(len(u_data), math.ceil(select_num_for_tagper / real_percent_vari))
+            # selected_idx_for_tagper = tagper.select_top_data(pred_score, min(tagper_num * (step + 1), len(u_data)))  # 训练tagper的数量也递增
+            selected_idx_for_tagper = reid.select_top_data_nlvm_b1(pred_score, dists, expand_num_for_tagper,
+                                                        select_num_for_tagper)
             new_train_data = tagper.generate_new_train_data_only(selected_idx_for_tagper, pred_y,
                                                                  u_data)  # 这个选择准确率应该是和前面的label_pre是一样的.
             train_tagper_data = l_data + new_train_data
@@ -141,10 +134,12 @@ def main(args):
         # 开始评估
         # mAP, top1, top5, top10, top20 =0,0,0,0,0
         tmAP, ttop1, ttop5, ttop10, ttop20 = tagper.evaluate(dataset_all.query, dataset_all.gallery)
-        tpred_y, tpred_score, tlabel_pre = tagper.estimate_label_atm3(u_data, s_data,l_data)
+        tpred_y, tpred_score, tlabel_pre,tdists = tagper.estimate_label_dist(u_data,l_data)
 
         # 下面正对 reid 移动数据.
-        selected_idx = tagper.select_top_data(tpred_score, min(mv_num * (step + 1), len(u_data)))  # 从所有 u_data 里面选
+        selected_idx = tagper.select_top_data_nlvm_b1(tpred_score, tdists, new_expend_nums_to_select,
+                                                        new_nums_to_select)
+        # selected_idx = tagper.select_top_data(tpred_score, min(mv_num * (step + 1), len(u_data)))  # 从所有 u_data 里面选
         s_data, tselect_pre = tagper.move_unlabel_to_label_cpu(selected_idx, tpred_y, u_data)
         tapger_end = time.time()
 

@@ -374,6 +374,66 @@ class EUG():
         # print(id_num)
         return labels, scores, label_pre
 
+    def estimate_label_dist(self,u_data,l_data):
+        u_label = np.array([label for _, label, _, _ in u_data])
+        l_label = np.array([label for _, label, _, _ in l_data])
+        # extract feature
+        u_feas = self.get_feature(u_data)
+        l_feas = self.get_feature(l_data)
+        print("u_features", u_feas.shape, "l_features", l_feas.shape)
+
+        scores = np.zeros((u_feas.shape[0]))
+        labels = np.zeros((u_feas.shape[0]))
+        # 分别用来存 _ufeas的分数和标签
+
+        num_correct_pred = 0
+        dists = []
+        for idx, u_fea in enumerate(u_feas):
+            diffs = l_feas - u_fea
+            dist = np.linalg.norm(diffs, axis=1)
+            index_min = np.argmin(dist)
+            dists.append(dist)
+            scores[idx] = - dist[index_min]  # "- dist" : more dist means less score
+            labels[idx] = l_label[index_min]  # take the nearest labled neighbor as the prediction label
+
+            if u_label[idx] == labels[idx]:
+                num_correct_pred += 1
+
+        print("{} predictions on all the unlabeled data: {} of {} is correct, accuracy = {:0.3f}".format(
+            self.mode, num_correct_pred, u_feas.shape[0], num_correct_pred / u_feas.shape[0]))
+
+        # sorted(id_num.items(),key = lambda item:item[1])
+        # print("id_num:--------------------------------------------id_num----------------- ")
+        # print(id_num)
+        dists = np.vstack(dists)
+        return labels, scores, num_correct_pred / u_feas.shape[0], dists
+
+    def select_top_data_nlvm_b1(self, pred_score, dists, new_expend_nums_to_select, new_nums_to_select):
+        # pred_score = pred_score.T # if necessary
+        # 方案2, 求最近的P%样本的方差
+        N_u, N_l = dists.shape
+        stds = np.zeros(N_u)
+
+        selection2 = np.zeros(N_u, 'bool')
+        index = np.argsort(-pred_score)
+
+        # 求最近的P%样本的方差
+        for i in index[:new_expend_nums_to_select]:
+            score = - dists[i]
+            # 求k近邻
+            # topk = int(N_l * percent_P)
+            topk = 2
+            topk_idxs = np.argpartition(score, topk)[:topk]
+            stds[i] = score[topk_idxs].std()  # 这里要求pre_score 要是二维的才行
+        # 根据方差排序
+        idxs = np.argsort(-stds)  # 这里该取负还是取正呢?
+        # print(stds[idxs[:nums_to_select]])
+        selection2[idxs[:new_nums_to_select]] = True
+        index_nonzero = np.nonzero(selection2)  # 返回非0元素的索引
+        select_num_actual = len(index_nonzero[0])
+        print("plan to select {}, selected {} in acrually.".format(new_nums_to_select, select_num_actual))
+        return selection2
+
 
     def select_top_data(self, pred_score, nums_to_select):
         v = np.zeros(len(pred_score))
