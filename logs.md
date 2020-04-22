@@ -42,6 +42,7 @@ this file was created to record the function of python files
 - 全程训练tagper
 - 运行命令
     - python3.6 atm05.py  --total_step 5 --train_tagper_step 3 --exp_order 5
+    
 
 
 

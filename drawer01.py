@@ -20,7 +20,7 @@ class drawer01():
             self.__for_generate_formdata(data_file,group,'format_data.txt')
             tagper_file = osp.join(self.exp_path, group, 'tagper_data.txt')
             self.__for_generate_formdata(tagper_file, group, 'format_tagper.txt')
-    def compare_reid_and_tagper(self,group_list,compare_item=['mAP','Rank-1','Rank-5','Rank-10','Rank_20','num_selected','label_pre','select_pre'],unit_size =4,dpi=100,hspace=0.3):
+    def compare_reid_and_tagper(self,group_list,compare_item=['mAP','Rank-1','Rank-5','Rank-10','Rank-20','num_selected','label_pre','select_pre'],unit_size =4,dpi=100,hspace=0.3):
         for group in group_list:
             try:
                 reid_file = codecs.open(osp.join(self.exp_path,str(group),'format_data.txt'),'r','utf-8')
@@ -35,7 +35,7 @@ class drawer01():
             out_name ='reidvstagper_{}'.format(group)
             self.__draw_compre_for_list(compare_list,compare_item,out_name,unit_size,dpi,hspace,is_reidvstagper=1)
 
-    def compare_train_list(self,train_list,is_tagper=0,compare_item=['mAP','Rank-1','Rank-5','Rank-10','Rank_20','num_selected','label_pre','select_pre'],unit_size =4,dpi=100,hspace=0.3):
+    def compare_train_list(self,train_list,is_tagper=0,compare_item=['mAP','Rank-1','Rank-5','Rank-10','Rank-20','num_selected','label_pre','select_pre'],unit_size =4,dpi=100,hspace=0.3):
         file_name = 'format_tagper.txt' if is_tagper else 'format_data.txt'
         compare_list = []
         for train in train_list:
@@ -46,6 +46,11 @@ class drawer01():
                 file_info = codecs.open(osp.join(self.exp_path, str(train), file_name), 'r', 'utf-8')
             file_data = eval('{' + file_info.read() + '}')
             compare_list.append(file_data)
+        baseline10 = codecs.open(osp.join('logs',self.dataset,'baseline','EF10','format_data.txt'),'r','utf-8')
+        baseline15 = codecs.open(osp.join('logs',self.dataset,'baseline','EF15','format_data.txt'),'r','utf-8')
+        baseline10 = eval('{' + baseline10.read() + '}')
+        baseline15 = eval('{' + baseline15.read() + '}')
+        compare_list.extend([baseline10,baseline15])
         out_name = 'comparetrains_tagper_{}'.format(train_list) if is_tagper else 'comparetrains_reid_{}'.format(train_list)
         self.__draw_compre_for_list(compare_list,compare_item,out_name,unit_size,dpi,hspace)
 
@@ -55,7 +60,7 @@ class drawer01():
         group_list.sort()
         file_name = 'format_data.txt' if not is_tagper else 'format_tagper.txt'
         out_name = 'reid_topvalue.txt' if not is_tagper else 'tagper_topvalue.txt'
-        items = ['step','mAP','Rank-1','Rank-5','Rank-10','Rank_20','label_pre']
+        items = ['step','mAP','Rank-1','Rank-5','Rank-10','Rank-20','label_pre','select_pre']
         out_file = codecs.open(osp.join(self.exp_path,out_name), 'w')
         out_file.write('group')
         for item in items:
@@ -74,9 +79,6 @@ class drawer01():
                 out_file.write('\t{}'.format(data))
             out_file.write('\n')
         out_file.close()
-
-
-
 
     def __draw_compre_for_list(self,compare_list,compare_item,out_name,unit_size,dpi,hspace,is_reidvstagper=0):
         item_num = len(compare_item)
@@ -115,7 +117,7 @@ class drawer01():
             datas[i] =[k.split(':')[-1].strip('%') for k in datas[i]]  #只取数值
         # datas = np.aray(datas)
         print(datas)
-        name_list = ['step','mAP','Rank-1','Rank-5','Rank-10','Rank_20','num_selected','label_pre','select_pre']
+        name_list = ['step','mAP','Rank-1','Rank-5','Rank-10','Rank-20','num_selected','label_pre','select_pre']
         format_file.write("\"length\":{},".format(len(datas)))
         format_file.write("\"title\":\"{}\"".format(self.exp_name + '_' + group))
         for i in range(len(name_list)):
@@ -126,7 +128,7 @@ if __name__ =='__main__':
     drawer = drawer01()
     # drawer.init()
     # drawer.generate_formdata_for_group_list([0,1,2,3])
-    # drawer.compare_reid_and_tagper([0])
-    # drawer.compare_train_list([0,1,2])
-    drawer.get_top_value_for_all(is_tagper=1)
+    # drawer.compare_reid_and_tagper([4,5])
+    drawer.compare_train_list([1,4])
+    # drawer.get_top_value_for_all(is_tagper=0)
 
