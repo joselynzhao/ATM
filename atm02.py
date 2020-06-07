@@ -138,7 +138,7 @@ def main(args):
         if args.clock:
             reid_time = reid_end - reid_start
             tagper_time = tapger_end - tagper_start
-            step_time = tapger_end + reid_start
+            step_time = tapger_end - reid_start
             time_file.write(
                 "step:{}  reid_time:{} tagper_time:{} step_time:{}\n".format(int(step + 1), reid_time, tagper_time,
                                                                              step_time))

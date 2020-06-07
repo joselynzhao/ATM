@@ -12,6 +12,43 @@ class drawer01():
         self.dataset =dataset
         self.exp_name = exp_name
         self.exp_path = osp.join('logs',self.dataset,self.exp_name)
+    def __get_time_info(self,file_path,is_baseline=0):
+        try:
+            time_file = codecs.open(osp.join(file_path,'time.txt'),'r','utf-8')
+        except FileNotFoundError:
+            print('Time.txt in {} is not fond'.format(file_path))
+        time_info = time_file.readlines()
+        step_time_list = []
+        for line in time_info:
+            line = line.split()
+            line = [float(i.split(':')[1]) for i in line]
+            step_time_out = line[1] + line[2] if not is_baseline else line[1]+line[2]+line[3]
+            step_time_list.append(step_time_out)
+        return step_time_list
+    def compare_train_lits_time(self,train_list,unit_size=2,dpi=100):
+        train_time  = []
+        for train in train_list:
+            step_time_list = self.__get_time_info(osp.join(self.exp_path,str(train)))
+            train_time.append(step_time_list)
+        # 添加baseline
+        baseline_EF10 = self.__get_time_info(osp.join('logs',self.dataset,'baseline','EF10'),is_baseline=1)
+        baseline_EF15 = self.__get_time_info(osp.join('logs',self.dataset,'baseline','EF15'),is_baseline=1)
+        train_time.append(baseline_EF10)
+        train_time.append(baseline_EF15)
+        # 下面开始绘图
+        plt.figure(figsize=(4*unit_size,2*unit_size),dpi=dpi)
+        for index,train in enumerate(train_time):
+            step = len(train)
+            x = np.linspace(1,step,step)
+            sum_time = sum(train)
+            plt.plot(x,train,label='{}:{}'.format(train_list[index] if index<len(train_list) else 'baseline',round(sum_time,2)))
+        plt.xlabel='steps'
+        plt.ylabel='time(s)'
+        plt.title = 'time costed of {}'.format(train_list)
+        plt.legend(loc='best')
+        plt.savefig(osp.join(self.exp_path,'time_costed_{}'.format(train_list)),bbox_inches='tight')
+        plt.show()
+
 
     def generate_formdata_for_group_list(self,group_list):
         for group in group_list:
@@ -125,10 +162,11 @@ class drawer01():
             format_file.write(",\"{}\":{}".format(name_list[i],data))
 
 if __name__ =='__main__':
-    drawer = drawer01()
+    drawer = drawer01(exp_name='atm')
     # drawer.init()
     # drawer.generate_formdata_for_group_list([0,1,2,3])
     # drawer.compare_reid_and_tagper([4,5])
-    drawer.compare_train_list([1,4])
+    # drawer.compare_train_list([1,4])
     # drawer.get_top_value_for_all(is_tagper=0)
+    drawer.compare_train_lits_time([0,1,2,3,4,5])
 
