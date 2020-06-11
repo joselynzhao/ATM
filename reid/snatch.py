@@ -142,6 +142,51 @@ class EUG():
         torch.save(model.state_dict(), osp.join(save_path, "{}_step_{}.ckpt".format(self.mode, step)))
         self.model = model
 
+    def train_atm06(self, train_data, step,times,epochs=10, step_size=55, init_lr=0.1, dropout=0.5):
+
+        """ create model and dataloader """
+        model = models.create(self.model_name, dropout=self.dropout, num_classes=self.num_classes, mode=self.mode)
+        model = nn.DataParallel(model).cuda()
+        # model = nn.DataParallel(model, device_ids=[3,4]).cuda()
+        # model.to(device)
+        dataloader = self.get_dataloader(train_data, training=True)
+
+        # the base parameters for the backbone (e.g. ResNet50)
+        base_param_ids = set(map(id, model.module.CNN.base.parameters()))
+
+        # we fixed the first three blocks to save GPU memory
+        base_params_need_for_grad = filter(lambda p: p.requires_grad, model.module.CNN.parameters())
+
+        # params of the new layers
+        new_params = [p for p in model.parameters() if id(p) not in base_param_ids]
+
+        # set the learning rate for backbone to be 0.1 times
+        param_groups = [
+            {'params': base_params_need_for_grad, 'lr_mult': 0.1},
+            {'params': new_params, 'lr_mult': 1.0}]
+
+        criterion = nn.CrossEntropyLoss().cuda()  # 标准
+        optimizer = torch.optim.SGD(param_groups, lr=init_lr, momentum=0.5, weight_decay = 5e-4, nesterov=True)
+
+        # change the learning rate by step
+        def adjust_lr(epoch, step_size):     #学习率的衰减也可以做调整
+            lr = init_lr / (10 ** (epoch // step_size))
+            for g in optimizer.param_groups:
+                g['lr'] = lr * g.get('lr_mult', 1)
+
+            if epoch % step_size == 0:
+                print("Epoch {}, current lr {}".format(epoch, lr))
+
+        """ main training process """
+        trainer = Trainer(model, criterion)
+        for epoch in range(epochs):
+            adjust_lr(epoch, step_size)
+            trainer.train(epoch, dataloader, optimizer)
+            # trainer.train(epoch, dataloader, optimizer, print_freq=len(dataloader)//30 * 10)
+        torch.save(model.state_dict(), osp.join(self.save_path, "{}_step_{}-{}.ckpt".format(self.mode, step,times)))
+        self.model = model
+
+
 
     def get_feature(self, dataset):
         dataloader = self.get_dataloader(dataset, training=False)

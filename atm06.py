@@ -46,7 +46,7 @@ def main(args):
 
     def train_epoch(yr): #只有训练reid的时候采用
         ep_k = math.ceil((len(one_shot)+yr)/len(one_shot))
-        times = math.floor(args.epoch/ep_k)
+        times = max(math.floor(args.epoch/ep_k),1)
         return ep_k,times
 
     Ep = [] # 经验
@@ -90,121 +90,82 @@ def main(args):
         num_reid,num_tagper = sampleing_number_curve(step)
         train_ep,train_times = train_epoch(num_reid)
         # 克隆种子得到标签器
+        iter_mode = 2 if num_tagper else 1
 
-        tagper = EUG(model_name=args.arch, batch_size=args.batch_size, mode=args.mode,
-                     num_classes=dataset_all.num_train_ids,
-                     data_dir=dataset_all.images_dir, l_data=one_shot, u_data=u_data, save_path=reid_path,
-                     max_frames=args.max_frames)
-        tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step-1)), step-1)
+        print("### step {} is training: num_reid={},num_tagper={}, train_ep={},train_times={}".format(step,num_reid,num_tagper,train_ep,train_times))
+        if iter_mode == 2:
+            tagper = EUG(model_name=args.arch, batch_size=args.batch_size, mode=args.mode,
+                         num_classes=dataset_all.num_train_ids,
+                         data_dir=dataset_all.images_dir, l_data=one_shot, u_data=u_data, save_path=reid_path,
+                         max_frames=args.max_frames)
+            tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step-1)), step-1)
 
-        # 实践
-        PE_pred_y, PE_pred_score, PE_label_pre = reid.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
-        selected_idx_RR = reid.select_top_data(PE_pred_score, num_reid)
-        select_pre_R = reid.get_select_pre(selected_idx_RR, PE_pred_y, u_data)
-        selected_idx_RT = reid.select_top_data(PE_pred_score, num_tagper)
-        select_pre_T = reid.get_select_pre(selected_idx_RT, PE_pred_y, u_data)
-
-
-        # 训练tagper
-        new_train_data = tagper.generate_new_train_data_only(selected_idx_RT, PE_pred_y,
-                                                             u_data)  # 这个选择准确率应该是和前面的label_pre是一样的.
-        train_tagper_data = one_shot + new_train_data
-        tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
-
-        AE_pred_y, AE_pred_score, AE_label_pre = tagper.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
+            # 实践
+            PE_pred_y, PE_pred_score, PE_label_pre = reid.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
+            selected_idx_RR = reid.select_top_data(PE_pred_score, num_reid)
+            select_pre_R = reid.get_select_pre(selected_idx_RR, PE_pred_y, u_data)
+            selected_idx_RT = reid.select_top_data(PE_pred_score, num_tagper)
+            select_pre_T = reid.get_select_pre(selected_idx_RT, PE_pred_y, u_data)
 
 
-        #下面需要进行知识融合 KF
-        AEs = normalization(AE_pred_score)
-        PEs = normalization(PE_pred_score)
-        KF =[PE_pred_y[i]==AE_pred_y[i] for i in range(len(u_data))]
-        KF_score= [KF[i]*(PEs[i]+AEs[i])+(1-KF[i])*abs(PEs[i]-AEs[i]) for i in range(len(u_data))]
-        KF_label = [KF[i]*PE_pred_y[i]+(1-KF[i])*(PE_pred_y[i] if PEs[i]>=AEs[i] else AE_pred_y[i]) for i in range(len(u_data))]
+            # 训练tagper
+            new_train_data = tagper.generate_new_train_data_only(selected_idx_RT, PE_pred_y,
+                                                                 u_data)  # 这个选择准确率应该是和前面的label_pre是一样的.
+            train_tagper_data = one_shot + new_train_data
+            tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
 
-        #获取Ep
-        selected_idx_Ep = tagper.select_top_data(KF_score,num_reid)
-        Ep,Ep_select_pre = tagper.move_unlabel_to_label_cpu(selected_idx_Ep,KF_label,u_data)
+            # 性能评估
+            mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery)
+
+            AE_pred_y, AE_pred_score, AE_label_pre = tagper.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
+            tagper_file.write(
+                "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} num_tagper:{} label_pre:{:.2%}\n".format(
+                    int(step), mAP, top1, top5, top10, top20,num_tagper,AE_label_pre))
+            print(
+                "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} num_tagper:{} label_pre:{:.2%}\n".format(
+                    int(step), mAP, top1, top5, top10, top20, num_tagper, AE_label_pre))
+
+            #下面需要进行知识融合 KF
+            AEs = normalization(AE_pred_score)
+            PEs = normalization(PE_pred_score)
+            KF =[PE_pred_y[i]==AE_pred_y[i] for i in range(len(u_data))]
+            KF_score= [KF[i]*(PEs[i]+AEs[i])+(1-KF[i])*abs(PEs[i]-AEs[i]) for i in range(len(u_data))]
+            KF_label = [KF[i]*PE_pred_y[i]+(1-KF[i])*(PE_pred_y[i] if PEs[i]>=AEs[i] else AE_pred_y[i]) for i in range(len(u_data))]
+            u_label = np.array([label for _, label, _, _ in u_data])
+            is_label_right = [1 if u_label[i]==KF_label[i] else 0 for i in range(len(u_label))]
+            KF_label_pre = sum(is_label_right)/len(u_label)
+
+            #获取Ep
+            selected_idx_Ep = tagper.select_top_data(KF_score,num_reid)
+            Ep,Ep_select_pre = tagper.move_unlabel_to_label_cpu(selected_idx_Ep,KF_label,u_data)
+            data_file.write("step:{} num_reid:{} select_pre_R:{:.2%} select_pre_T:{:.2%} KF_label_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step,num_reid,select_pre_R,select_pre_T,KF_label_pre,Ep_select_pre))
+            print("step:{} num_reid:{} select_pre_R:{:.2%} select_pre_T:{:.2%} KF_label_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step,num_reid,select_pre_R,select_pre_T,KF_label_pre,Ep_select_pre))
+
+
+        elif iter_mode==1:
+            PE_pred_y, PE_pred_score, PE_label_pre = reid.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
+            selected_idx_RR = reid.select_top_data(PE_pred_score, num_reid)
+            Ep, Ep_select_pre = reid.move_unlabel_to_label_cpu(selected_idx_RR, PE_pred_y, u_data)
+            data_file.write(
+                "step:{} num_reid:{} Ep_select_pre:{:.2%}\n".format(
+                    step, num_reid, Ep_select_pre)) # Ep_select_pre 和select_pre_R 是一样的.
+            print(
+                "step:{} num_reid:{} Ep_select_pre:{:.2%}\n".format(
+                    step, num_reid, Ep_select_pre))  # Ep_select_pre 和select_pre_R 是一样的.
 
         # 训练种子
+        train_seed_data = Ep + one_shot
+        for i in range(train_times):
+            reid.train_atm06(train_seed_data, step, i, epochs=train_ep, step_size=args.step_size, init_lr=0.1)
+            mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery)
+            data_file.write(
+                "step:{} times:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
+                    int(step + 1), i, mAP, top1, top5, top10, top20))
+            print(
+                "step:{} times:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
+                    int(step + 1), i, mAP, top1, top5, top10, top20))
 
 
-
-
-
-
-    tagper = EUG(model_name=args.arch, batch_size=args.batch_size, mode=args.mode,
-                 num_classes=dataset_all.num_train_ids,
-                 data_dir=dataset_all.images_dir, l_data=one_shot, u_data=u_data, save_path=reid_path,
-                 max_frames=args.max_frames)
-    # 开始的时间记录
-    exp_start = time.time()
-    for step in range(args.total_step+1): #加1是为了保证所有的数据都能加入到训练集中
-        print("---------------------------------training step:{}/{}-------------------------------------".format(step+1,args.total_step+1))
-
-        # 开始训练
-        reid_start = time.time()
-        train_reid_data = l_data+s_data  # 在这个过程中,保持了one_shot不变了
-        if (step == 0) and not args.is_baseline:
-            reid.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step)), step)
-        else:
-            reid.train(train_reid_data, step, tagper=0, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
-
-        # 开始评估
-        # mAP, top1, top5, top10, top20 =0,0,0,0,0
-        mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery)
-        # 测试 train tagper之前的select_pre
-        pred_y, pred_score, label_pre = reid.estimate_label_atm3(u_data, s_data,l_data)  # 针对u_data进行标签估计
-        selected_idx = reid.select_top_data(pred_score, min(mv_num * (step + 1), len(u_data)))
-        select_pre = reid.get_select_pre(selected_idx, pred_y, u_data)
-
-        reid_end = time.time()
-
-
-        tagper_start = time.time()
-        '''第一个tagper可以resume'''
-        # if step == 0  and not args.is_baseline:
-        #     tagper.resume(osp.join(reid_path,'tagper','Dissimilarity_step_0.ckpt'), 0)
-        # else:
-        #     tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step)), step)
-        #     selected_idx = tagper.select_top_data(pred_score, min(tagper_num*(step+1),len(u_data)))  #训练tagper的数量也递增
-        #     new_train_data = tagper.generate_new_train_data_only(selected_idx, pred_y, u_data)  # 这个选择准确率应该是和前面的label_pre是一样的.
-        #     train_tagper_data = one_shot+l_data+new_train_data
-        #     tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
-        '''所有的tagper都重新训练'''
-        # if step != 0:
-        if True:
-            tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step)), step)
-            selected_idx_for_tagper = tagper.select_top_data(pred_score, min(tagper_num * (step + 1), len(u_data)))  # 训练tagper的数量也递增
-            new_train_data = tagper.generate_new_train_data_only(selected_idx_for_tagper, pred_y,
-                                                                 u_data)  # 这个选择准确率应该是和前面的label_pre是一样的.
-            train_tagper_data = l_data + new_train_data
-            tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
-        # else: # 如果是0 就是直接resume
-        #     tagper.resume(osp.join(reid_path,'tagper1','Dissimilarity_step_{}.ckpt'.format(step)), step)
-
-        # 开始评估
-        # mAP, top1, top5, top10, top20 =0,0,0,0,0
-        tmAP, ttop1, ttop5, ttop10, ttop20 = tagper.evaluate(dataset_all.query, dataset_all.gallery)
-        tpred_y, tpred_score, tlabel_pre = tagper.estimate_label_atm3(u_data, s_data,l_data)
-
-        # 下面正对 reid 移动数据.
-        selected_idx = tagper.select_top_data(tpred_score, min(mv_num * (step + 1), len(u_data)))  # 从所有 u_data 里面选
-        s_data, tselect_pre = tagper.move_unlabel_to_label_cpu(selected_idx, tpred_y, u_data)
-        tapger_end = time.time()
-
-        data_file.write(
-            "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{} label_pre:{:.2%} select_pre:{:.2%}\n".format(
-                int(step + 1), mAP, top1, top5, top10, top20, len(s_data), label_pre, select_pre))
-        print(
-            "reid step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{} label_pre:{:.2%} select_pre:{:.2%} \n".format(
-                int(step + 1), mAP, top1, top5, top10, top20, len(s_data), label_pre, select_pre))
-
-        tagper_file.write(
-            "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{} label_pre:{:.2%} select_pre:{:.2%}\n".format(
-                int(step + 1), tmAP, ttop1, ttop5, ttop10, ttop20, len(s_data), tlabel_pre, tselect_pre))
-        print(
-            "tagper step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} len(l_data):{} label_pre:{:.2%} select_pre:{:.2%}\n".format(
-                int(step + 1), tmAP, ttop1, ttop5, ttop10, ttop20, len(s_data), tlabel_pre, tselect_pre))
 
         if args.clock:
             reid_time = reid_end - reid_start
