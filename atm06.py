@@ -83,7 +83,7 @@ def main(args):
 
     # 初始化循环模式
     iter_mode = 2 # 2双循环模式 1单循环模式
-
+    step_time_list = []
     # 开始循环
     for step in range(1,args.total_step+1):
         # 获取采样数量
@@ -91,9 +91,10 @@ def main(args):
         train_ep,train_times = train_epoch(num_reid)
         # 克隆种子得到标签器
         iter_mode = 2 if num_tagper else 1
-
+        stage_time = 0
         print("### step {} is training: num_reid={},num_tagper={}, train_ep={},train_times={}".format(step,num_reid,num_tagper,train_ep,train_times))
         if iter_mode == 2:
+            time1 = time.time()
             tagper = EUG(model_name=args.arch, batch_size=args.batch_size, mode=args.mode,
                          num_classes=dataset_all.num_train_ids,
                          data_dir=dataset_all.images_dir, l_data=one_shot, u_data=u_data, save_path=reid_path,
@@ -113,10 +114,11 @@ def main(args):
                                                                  u_data)  # 这个选择准确率应该是和前面的label_pre是一样的.
             train_tagper_data = one_shot + new_train_data
             tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
-
+            time2 = time.time()
             # 性能评估
             mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery)
 
+            time3 = time.time()
             AE_pred_y, AE_pred_score, AE_label_pre = tagper.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
             tagper_file.write(
                 "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} num_tagper:{} label_pre:{:.2%}\n".format(
@@ -140,9 +142,12 @@ def main(args):
             Ep,Ep_select_pre = tagper.move_unlabel_to_label_cpu(selected_idx_Ep,KF_label,u_data)
             data_file.write("step:{} num_reid:{} select_pre_R:{:.2%} select_pre_T:{:.2%} KF_label_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step,num_reid,select_pre_R,select_pre_T,KF_label_pre,Ep_select_pre))
             print("step:{} num_reid:{} select_pre_R:{:.2%} select_pre_T:{:.2%} KF_label_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step,num_reid,select_pre_R,select_pre_T,KF_label_pre,Ep_select_pre))
+            time4 = time.time()
+            stage_time = time4-time3+time2-time1
 
 
         elif iter_mode==1:
+            time1= time.time()
             PE_pred_y, PE_pred_score, PE_label_pre = reid.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
             selected_idx_RR = reid.select_top_data(PE_pred_score, num_reid)
             Ep, Ep_select_pre = reid.move_unlabel_to_label_cpu(selected_idx_RR, PE_pred_y, u_data)
@@ -152,8 +157,11 @@ def main(args):
             print(
                 "step:{} num_reid:{} Ep_select_pre:{:.2%}\n".format(
                     step, num_reid, Ep_select_pre))  # Ep_select_pre 和select_pre_R 是一样的.
+            time2 = time.time()
+            stage_time=time2-time1
 
         # 训练种子
+        time1 = time.time()
         train_seed_data = Ep + one_shot
         for i in range(train_times):
             reid.train_atm06(train_seed_data, step, i, epochs=train_ep, step_size=args.step_size, init_lr=0.1)
@@ -164,27 +172,22 @@ def main(args):
             print(
                 "step:{} times:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
                     int(step + 1), i, mAP, top1, top5, top10, top20))
+        time2 = time.time()
+        train_time = time2-time1
+        step_time = stage_time +train_time
+        step_time_list.append(step_time)
+        time_file.write(
+            "step:{} stage_time:{} train_time:{} step_time:{}\n".format(int(step), stage_time, train_time,step_time))
+        print("stage_time =  %02d:%02d:%02.6f" % (changetoHSM(stage_time)))
+        print("train_time =  %02d:%02d:%02.6f" % (changetoHSM(train_time)))
+        print("step_time =  %02d:%02d:%02.6f" % (changetoHSM(step_time)))
 
-
-
-        if args.clock:
-            reid_time = reid_end - reid_start
-            tagper_time = tapger_end - tagper_start
-            step_time = tapger_end - reid_start
-            time_file.write(
-                "step:{}  reid_time:{} tagper_time:{} step_time:{}\n".format(int(step + 1), reid_time, tagper_time,
-                                                                             step_time))
-            h, m, s = changetoHSM(step_time)
-            print("this step is over, cost %02d:%02d:%02.6f" % (h, m, s))
-
+    all_time = sum(step_time_list)
+    print("training is over ,cost  %02d:%02d:%02.6f" % (changetoHSM(all_time)))
     data_file.close()
     tagper_file.close()
-    if (args.clock):
-        exp_end = time.time()
-        exp_time = exp_end - exp_start
-        h, m, s = changetoHSM(exp_time)
-        print("experiment is over, cost %02d:%02d:%02.6f" % (h, m, s))
-        time_file.close()
+    time_file.close()
+
 
 
 if __name__ == '__main__':
@@ -196,15 +199,15 @@ if __name__ == '__main__':
     parser.add_argument('--logs_dir', type=str, metavar='PATH', default=os.path.join(working_dir, 'logs'))  # 保持日志根目录
     parser.add_argument('--exp_name', type=str, default="atm")
     parser.add_argument('--exp_order', type=str, default="0")
-    parser.add_argument('--resume', type=bool, default=False)
+    # parser.add_argument('--resume', type=bool, default=False)
     parser.add_argument('--mode', type=str, choices=["Classification", "Dissimilarity"],
                         default="Dissimilarity")  # 这个考虑要不要取消掉
-    parser.add_argument('--max_frames', type=int, default=400)
-    parser.add_argument('--clock', type=bool, default=True)  # 是否记时
-    parser.add_argument('--is_baseline', type=bool, default=False)  # 默认不是baseline
+    parser.add_argument('--max_frames', type=int, default=100)
+    # parser.add_argument('--clock', type=bool, default=True)  # 是否记时
+    # parser.add_argument('--is_baseline', type=bool, default=False)  # 默认不是baseline
     # the key parameters is following
     parser.add_argument('--total_step', type=int, default=5)  # 默认总的五次迭代.
-    parser.add_argument('--train_tagper_step', type=float, default=3)  # 用于训练 tagper的 step 数
+    # parser.add_argument('--train_tagper_step', type=float, default=3)  # 用于训练 tagper的 step 数
     parser.add_argument('--epoch', type=int, default=70)
     parser.add_argument('--step_size', type=int, default=55)
     parser.add_argument('-b', '--batch_size', type=int, default=16)
