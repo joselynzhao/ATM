@@ -40,7 +40,7 @@ def main(args):
         dataset_all.name))
 
     def sampleing_number_curve(step):  # p = 1时就是线性曲线
-        yr = min(math.floor(pow(step / args.total_step, args.p)), len(u_data))
+        yr = min(math.floor(pow(step*len(u_data) / args.total_step, args.p)), len(u_data))
         yt = 2 * yr if 2 * yr < len(u_data) else 0
         return yr, yt  # 当yt=0的时候,就说明 训练进入了单循环模式
 
@@ -102,7 +102,7 @@ def main(args):
             tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step-1)), step-1)
 
             # 实践
-            PE_pred_y, PE_pred_score, PE_label_pre = reid.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
+            PE_pred_y, PE_pred_score, PE_label_pre = reid.estimate_label_atm6(u_data, Ep, one_shot)  # 针对u_data进行标签估计
             selected_idx_RR = reid.select_top_data(PE_pred_score, num_reid)
             select_pre_R = reid.get_select_pre(selected_idx_RR, PE_pred_y, u_data)
             selected_idx_RT = reid.select_top_data(PE_pred_score, num_tagper)
@@ -116,10 +116,10 @@ def main(args):
             tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
             time2 = time.time()
             # 性能评估
-            mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery)
+            mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery) if args.ev else (0,0,0,0,0)
 
             time3 = time.time()
-            AE_pred_y, AE_pred_score, AE_label_pre = tagper.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
+            AE_pred_y, AE_pred_score, AE_label_pre = tagper.estimate_label_atm6(u_data, Ep, one_shot)  # 针对u_data进行标签估计
             tagper_file.write(
                 "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} num_tagper:{} label_pre:{:.2%}\n".format(
                     int(step), mAP, top1, top5, top10, top20,num_tagper,AE_label_pre))
@@ -165,7 +165,7 @@ def main(args):
         train_seed_data = Ep + one_shot
         for i in range(train_times):
             reid.train_atm06(train_seed_data, step, i, epochs=train_ep, step_size=args.step_size, init_lr=0.1)
-            mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery)
+            mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery) if args.ev else (0,0,0,0,0)
             data_file.write(
                 "step:{} times:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
                     int(step + 1), i, mAP, top1, top5, top10, top20))
@@ -203,6 +203,7 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, choices=["Classification", "Dissimilarity"],
                         default="Dissimilarity")  # 这个考虑要不要取消掉
     parser.add_argument('--max_frames', type=int, default=100)
+    parser.add_argument('--ev', type=int, default=1)
     # parser.add_argument('--clock', type=bool, default=True)  # 是否记时
     # parser.add_argument('--is_baseline', type=bool, default=False)  # 默认不是baseline
     # the key parameters is following
@@ -226,6 +227,5 @@ if __name__ == '__main__':
 
 
     '''
-    python3.6 atm03.py  --total_step 5 --train_tagper_step 3 --exp_order 2
-    python3.6 atm03.py  --total_step 8 --train_tagper_step 4 --exp_order 3
+    python3.6 atm06.py --total_step 5 --exp_order 6
     '''
