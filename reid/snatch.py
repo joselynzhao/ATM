@@ -357,7 +357,7 @@ class EUG():
         scores = np.zeros((u_feas.shape[0]))
         labels = np.zeros((u_feas.shape[0]))
 
-        id_num = {}  # 以标签名称作为字典
+        # id_num = {}  # 以标签名称作为字典
         num_correct_pred = 0
         for idx, u_fea in enumerate(u_feas):
             dist_one = np.zeros((o_label.shape[0]))  #用来放one_shot的距离
@@ -372,6 +372,7 @@ class EUG():
             if u_label[idx] == labels[idx]:
                 num_correct_pred += 1
         label_pre = 0
+        # labels = map(int,labels) # 将其映射为整形好像没有其作用.
         if u_feas.shape[0] != 0:
             label_pre = num_correct_pred / u_feas.shape[0]
         print("{} predictions on all the unlabeled data: {} of {} is correct, accuracy = {:0.3f}".format(

@@ -41,12 +41,11 @@ def main(args):
 
     def sampleing_number_curve(step):  # p = 1时就是线性曲线
         yr = min(math.floor(pow(step*len(u_data) / args.total_step, args.p)), len(u_data))
-        yt = 2 * yr if 2 * yr < len(u_data) else 0
-        return yr, yt  # 当yt=0的时候,就说明 训练进入了单循环模式
+        return yr
 
     def train_epoch(yr): #只有训练reid的时候采用
-        ep_k = math.ceil((len(one_shot)+yr)/len(one_shot))
-        times = max(math.floor(args.epoch/ep_k),1)
+        times = math.ceil((len(one_shot)+yr)/len(one_shot))
+        ep_k = max(math.floor(args.epoch/times),1)
         return ep_k,times
 
     Ep = [] # 经验
@@ -79,18 +78,19 @@ def main(args):
     reid = EUG(model_name=args.arch, batch_size=args.batch_size, mode=args.mode, num_classes=dataset_all.num_train_ids,
                data_dir=dataset_all.images_dir, l_data=one_shot, u_data=u_data, save_path=reid_path,
                max_frames=args.max_frames)
-    reid.resume(osp.join(reid_path, 'Dissimilarity_step_0.ckpt'), 0)
+    reid.resume(osp.join(reid_path, 'Dissimilarity_step_0-0.ckpt'), 0)
 
     # 初始化循环模式
     iter_mode = 2 # 2双循环模式 1单循环模式
     step_time_list = []
     # 开始循环
+    last_train_times= 0
     for step in range(1,args.total_step+1):
         # 获取采样数量
-        num_reid,num_tagper = sampleing_number_curve(step)
+        num_reid = sampleing_number_curve(step)
+        num_tagper = min(math.ceil(num_reid * args.baba),len(u_data))
         train_ep,train_times = train_epoch(num_reid)
         # 克隆种子得到标签器
-        iter_mode = 2 if num_tagper else 1
         stage_time = 0
         print("### step {} is training: num_reid={},num_tagper={}, train_ep={},train_times={}".format(step,num_reid,num_tagper,train_ep,train_times))
         if iter_mode == 2:
@@ -99,7 +99,8 @@ def main(args):
                          num_classes=dataset_all.num_train_ids,
                          data_dir=dataset_all.images_dir, l_data=one_shot, u_data=u_data, save_path=reid_path,
                          max_frames=args.max_frames)
-            tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}.ckpt'.format(step-1)), step-1)
+            tagper.resume(osp.join(reid_path, 'Dissimilarity_step_{}-{}.ckpt'.format(step-1,math.ceil(last_train_times/2))), step-1)
+            last_train_times = train_times-1
 
             # 实践
             PE_pred_y, PE_pred_score, PE_label_pre = reid.estimate_label_atm6(u_data, Ep, one_shot)  # 针对u_data进行标签估计
@@ -121,27 +122,30 @@ def main(args):
             time3 = time.time()
             AE_pred_y, AE_pred_score, AE_label_pre = tagper.estimate_label_atm6(u_data, Ep, one_shot)  # 针对u_data进行标签估计
             tagper_file.write(
-                "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} num_tagper:{} label_pre:{:.2%}\n".format(
-                    int(step), mAP, top1, top5, top10, top20,num_tagper,AE_label_pre))
+                "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
+                    int(step), mAP, top1, top5, top10, top20))
             print(
-                "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%} num_tagper:{} label_pre:{:.2%}\n".format(
-                    int(step), mAP, top1, top5, top10, top20, num_tagper, AE_label_pre))
+                "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
+                    int(step), mAP, top1, top5, top10, top20))
 
             #下面需要进行知识融合 KF
             AEs = normalization(AE_pred_score)
             PEs = normalization(PE_pred_score)
-            KF =[PE_pred_y[i]==AE_pred_y[i] for i in range(len(u_data))]
-            KF_score= [KF[i]*(PEs[i]+AEs[i])+(1-KF[i])*abs(PEs[i]-AEs[i]) for i in range(len(u_data))]
-            KF_label = [KF[i]*PE_pred_y[i]+(1-KF[i])*(PE_pred_y[i] if PEs[i]>=AEs[i] else AE_pred_y[i]) for i in range(len(u_data))]
+            KF =np.array([PE_pred_y[i]==AE_pred_y[i] for i in range(len(u_data))])
+            KF_score= np.array([KF[i]*(PEs[i]+AEs[i])+(1-KF[i])*abs(PEs[i]-AEs[i]) for i in range(len(u_data))])
+            KF_label = np.array([KF[i]*PE_pred_y[i]+(1-KF[i])*(PE_pred_y[i] if PEs[i]>=AEs[i] else AE_pred_y[i]) for i in range(len(u_data))])
             u_label = np.array([label for _, label, _, _ in u_data])
-            is_label_right = [1 if u_label[i]==KF_label[i] else 0 for i in range(len(u_label))]
+            is_label_right = np.array([1 if u_label[i]==KF_label[i] else 0 for i in range(len(u_label))])
             KF_label_pre = sum(is_label_right)/len(u_label)
 
             #获取Ep
             selected_idx_Ep = tagper.select_top_data(KF_score,num_reid)
             Ep,Ep_select_pre = tagper.move_unlabel_to_label_cpu(selected_idx_Ep,KF_label,u_data)
-            data_file.write("step:{} num_reid:{} select_pre_R:{:.2%} select_pre_T:{:.2%} KF_label_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step,num_reid,select_pre_R,select_pre_T,KF_label_pre,Ep_select_pre))
-            print("step:{} num_reid:{} select_pre_R:{:.2%} select_pre_T:{:.2%} KF_label_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step,num_reid,select_pre_R,select_pre_T,KF_label_pre,Ep_select_pre))
+            data_file.write("step:{} PE_labele_pre:{:.2%} AE_label_pre:{:.2%} KF_label_pre:{:.2%}\n".format(step,PE_label_pre,AE_label_pre,KF_label_pre))
+            print("step:{} PE_labele_pre:{:.2%} AE_label_pre:{:.2%} KF_label_pre:{:.2%}\n".format(step,PE_label_pre,AE_label_pre,KF_label_pre))
+            data_file.write("step:{} num_reid:{} num_tagper:{} select_pre_R:{:.2%} select_pre_T:{:.2%}  Ep_select_pre:{:.2%}\n".format(step,num_reid,num_tagper, select_pre_R,select_pre_T,Ep_select_pre))
+            print("step:{} num_reid:{} num_tagper:{} select_pre_R:{:.2%} select_pre_T:{:.2%}  Ep_select_pre:{:.2%}\n".format(step,num_reid,num_tagper, select_pre_R,select_pre_T,Ep_select_pre))
+
             time4 = time.time()
             stage_time = time4-time3+time2-time1
 
@@ -151,12 +155,8 @@ def main(args):
             PE_pred_y, PE_pred_score, PE_label_pre = reid.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
             selected_idx_RR = reid.select_top_data(PE_pred_score, num_reid)
             Ep, Ep_select_pre = reid.move_unlabel_to_label_cpu(selected_idx_RR, PE_pred_y, u_data)
-            data_file.write(
-                "step:{} num_reid:{} Ep_select_pre:{:.2%}\n".format(
-                    step, num_reid, Ep_select_pre)) # Ep_select_pre 和select_pre_R 是一样的.
-            print(
-                "step:{} num_reid:{} Ep_select_pre:{:.2%}\n".format(
-                    step, num_reid, Ep_select_pre))  # Ep_select_pre 和select_pre_R 是一样的.
+            data_file.write("step:{} num_reid:{} PE_label_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step, num_reid, PE_label_pre, Ep_select_pre)) # Ep_select_pre 和select_pre_R 是一样的.
+            print("step:{} num_reid:{} PE_label_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step, num_reid, PE_label_pre, Ep_select_pre)) # Ep_select_pre 和select_pre_R 是一样的.
             time2 = time.time()
             stage_time=time2-time1
 
@@ -168,10 +168,13 @@ def main(args):
             mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery) if args.ev else (0,0,0,0,0)
             data_file.write(
                 "step:{} times:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
-                    int(step + 1), i, mAP, top1, top5, top10, top20))
+                    int(step), i, mAP, top1, top5, top10, top20))
             print(
                 "step:{} times:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
-                    int(step + 1), i, mAP, top1, top5, top10, top20))
+                    int(step), i, mAP, top1, top5, top10, top20))
+        if num_tagper==len(u_data):
+            iter_mode = 1   # 进入单循环模式.
+
         time2 = time.time()
         train_time = time2-time1
         step_time = stage_time +train_time
@@ -208,6 +211,7 @@ if __name__ == '__main__':
     # parser.add_argument('--is_baseline', type=bool, default=False)  # 默认不是baseline
     # the key parameters is following
     parser.add_argument('--total_step', type=int, default=5)  # 默认总的五次迭代.
+
     # parser.add_argument('--train_tagper_step', type=float, default=3)  # 用于训练 tagper的 step 数
     parser.add_argument('--epoch', type=int, default=70)
     parser.add_argument('--step_size', type=int, default=55)
@@ -216,6 +220,7 @@ if __name__ == '__main__':
 
     '''new'''
     parser.add_argument('--p', type=int, default=1)  # 采样曲线的指数
+    parser.add_argument('--baba', type=float, default=2)  # tagper的训练数量reid的baba倍数,感觉2应该是上线了.
 
     # 下面是暂时不知道用来做什么的参数
     parser.add_argument('-a', '--arch', type=str, default='avg_pool', choices=models.names())  # eug model_name
@@ -228,4 +233,5 @@ if __name__ == '__main__':
 
     '''
     python3.6 atm06.py --total_step 5 --exp_order 6
+    python3.6 atm06.py --total_step 6 --exp_order 7 --p 1 --baba 1.5
     '''
