@@ -119,7 +119,7 @@ def main(args):
             tagper.train(train_tagper_data, step, tagper=1, epochs=args.epoch, step_size=args.step_size, init_lr=0.1)
             time2 = time.time()
             # 性能评估
-            mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery) if args.ev else (0,0,0,0,0)
+            mAP, top1, top5, top10, top20 = tagper.evaluate(dataset_all.query, dataset_all.gallery) if args.ev else (0,0,0,0,0)
             P_tagper.write(
                 "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
                     int(step), mAP, top1, top5, top10, top20))
@@ -197,6 +197,8 @@ def main(args):
     print("training is over ,cost  %02d:%02d:%02.6f" % (changetoHSM(all_time)))
     P_reid.close()
     P_tagper.close()
+    S_file.close()
+    L_file.close()
     time_file.close()
 
 
@@ -242,4 +244,5 @@ if __name__ == '__main__':
     '''
     python3.6 atm06.py --total_step 5 --exp_order 6
     python3.6 atm06.py --total_step 6 --exp_order 7 --p 1 --baba 1.5
+    python3.6 atm06.py --total_step 6 --exp_order 8 --p 1 --baba 2 --max_frames 400
     '''
