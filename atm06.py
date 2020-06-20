@@ -68,9 +68,11 @@ def main(args):
     # 第三部分要说明关键参数的设定
     reid_path = osp.join(args.logs_dir, args.dataset, args.exp_name, args.exp_order)
     sys.stdout = Logger(osp.join(reid_path, 'log' + time.strftime(".%m_%d_%H-%M-%S") + '.txt'))
-    data_file = codecs.open(osp.join(reid_path, 'data.txt'), mode='a')
+    P_reid = codecs.open(osp.join(reid_path, 'P_reid.txt'), mode='a')
+    S_file = codecs.open(osp.join(reid_path, 'S.txt'), mode='a')  #记录选择准确率
+    L_file = codecs.open(osp.join(reid_path, 'L.txt'), mode='a') # 记录标签估计准确率
     time_file = codecs.open(osp.join(reid_path, 'time.txt'), mode='a')
-    tagper_file = codecs.open(osp.join(reid_path, "tagper_data.txt"), mode='a')
+    P_tagper = codecs.open(osp.join(reid_path, "P_tagper.txt"), mode='a')
 
     # initial the EUG algorithm
 
@@ -118,15 +120,20 @@ def main(args):
             time2 = time.time()
             # 性能评估
             mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery) if args.ev else (0,0,0,0,0)
-
-            time3 = time.time()
-            AE_pred_y, AE_pred_score, AE_label_pre = tagper.estimate_label_atm6(u_data, Ep, one_shot)  # 针对u_data进行标签估计
-            tagper_file.write(
+            P_tagper.write(
                 "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
                     int(step), mAP, top1, top5, top10, top20))
             print(
                 "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
                     int(step), mAP, top1, top5, top10, top20))
+
+
+            time3 = time.time()
+            AE_pred_y, AE_pred_score, AE_label_pre = tagper.estimate_label_atm6(u_data, Ep, one_shot)  # 针对u_data进行标签估计
+
+            selected_idx_TR = reid.select_top_data(AE_pred_score, num_reid)
+            AE_select_pre = reid.get_select_pre(selected_idx_TR, AE_pred_y, u_data)
+
 
             #下面需要进行知识融合 KF
             AEs = normalization(AE_pred_score)
@@ -141,10 +148,11 @@ def main(args):
             #获取Ep
             selected_idx_Ep = tagper.select_top_data(KF_score,num_reid)
             Ep,Ep_select_pre = tagper.move_unlabel_to_label_cpu(selected_idx_Ep,KF_label,u_data)
-            data_file.write("step:{} PE_labele_pre:{:.2%} AE_label_pre:{:.2%} KF_label_pre:{:.2%}\n".format(step,PE_label_pre,AE_label_pre,KF_label_pre))
+            L_file.write("step:{} PE_labele_pre:{:.2%} AE_label_pre:{:.2%} KF_label_pre:{:.2%}\n".format(step,PE_label_pre,AE_label_pre,KF_label_pre))
             print("step:{} PE_labele_pre:{:.2%} AE_label_pre:{:.2%} KF_label_pre:{:.2%}\n".format(step,PE_label_pre,AE_label_pre,KF_label_pre))
-            data_file.write("step:{} num_reid:{} num_tagper:{} select_pre_R:{:.2%} select_pre_T:{:.2%}  Ep_select_pre:{:.2%}\n".format(step,num_reid,num_tagper, select_pre_R,select_pre_T,Ep_select_pre))
-            print("step:{} num_reid:{} num_tagper:{} select_pre_R:{:.2%} select_pre_T:{:.2%}  Ep_select_pre:{:.2%}\n".format(step,num_reid,num_tagper, select_pre_R,select_pre_T,Ep_select_pre))
+            S_file.write("step:{} num_reid:{} num_tagper:{} select_pre_R:{:.2%} select_pre_T:{:.2%} AE_select_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step,num_reid,num_tagper, select_pre_R,select_pre_T,AE_select_pre,Ep_select_pre))
+            print("step:{} num_reid:{} num_tagper:{} select_pre_R:{:.2%} select_pre_T:{:.2%} AE_select_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step,num_reid,num_tagper, select_pre_R,select_pre_T,AE_select_pre,Ep_select_pre))
+
 
             time4 = time.time()
             stage_time = time4-time3+time2-time1
@@ -155,7 +163,7 @@ def main(args):
             PE_pred_y, PE_pred_score, PE_label_pre = reid.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
             selected_idx_RR = reid.select_top_data(PE_pred_score, num_reid)
             Ep, Ep_select_pre = reid.move_unlabel_to_label_cpu(selected_idx_RR, PE_pred_y, u_data)
-            data_file.write("step:{} num_reid:{} PE_label_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step, num_reid, PE_label_pre, Ep_select_pre)) # Ep_select_pre 和select_pre_R 是一样的.
+            P_reid.write("step:{} num_reid:{} PE_label_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step, num_reid, PE_label_pre, Ep_select_pre)) # Ep_select_pre 和select_pre_R 是一样的.
             print("step:{} num_reid:{} PE_label_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step, num_reid, PE_label_pre, Ep_select_pre)) # Ep_select_pre 和select_pre_R 是一样的.
             time2 = time.time()
             stage_time=time2-time1
@@ -166,7 +174,7 @@ def main(args):
         for i in range(train_times):
             reid.train_atm06(train_seed_data, step, i, epochs=train_ep, step_size=args.step_size, init_lr=0.1)
             mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery) if args.ev else (0,0,0,0,0)
-            data_file.write(
+            P_reid.write(
                 "step:{} times:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
                     int(step), i, mAP, top1, top5, top10, top20))
             print(
@@ -187,8 +195,8 @@ def main(args):
 
     all_time = sum(step_time_list)
     print("training is over ,cost  %02d:%02d:%02.6f" % (changetoHSM(all_time)))
-    data_file.close()
-    tagper_file.close()
+    P_reid.close()
+    P_tagper.close()
     time_file.close()
 
 
