@@ -74,6 +74,13 @@ def main(args):
     time_file = codecs.open(osp.join(reid_path, 'time.txt'), mode='a')
     P_tagper = codecs.open(osp.join(reid_path, "P_tagper.txt"), mode='a')
 
+    # 写入全部表头
+    P_reid.write("step times mAP top1 top5 top10 top20\n")
+    P_tagper.write("step mAP top1 top5 top10 top20\n")
+    L_file.write("step PE_label_pre AE_label_pre KF_label_pre\n")
+    S_file.write("step mum_reid EP_select_pre select_pre_R select_pre_T AE_select_pre num_tagper\n")
+    time_file.write("step stage_time train_time step_time\n")
+
     # initial the EUG algorithm
 
     # 注意不要去破坏公共部分的代码
@@ -121,7 +128,7 @@ def main(args):
             # 性能评估
             mAP, top1, top5, top10, top20 = tagper.evaluate(dataset_all.query, dataset_all.gallery) if args.ev else (0,0,0,0,0)
             P_tagper.write(
-                "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
+                "{} {:.2%} {:.2%} {:.2%} {:.2%} {:.2%}\n".format(
                     int(step), mAP, top1, top5, top10, top20))
             print(
                 "step:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
@@ -148,9 +155,9 @@ def main(args):
             #获取Ep
             selected_idx_Ep = tagper.select_top_data(KF_score,num_reid)
             Ep,Ep_select_pre = tagper.move_unlabel_to_label_cpu(selected_idx_Ep,KF_label,u_data)
-            L_file.write("step:{} PE_labele_pre:{:.2%} AE_label_pre:{:.2%} KF_label_pre:{:.2%}\n".format(step,PE_label_pre,AE_label_pre,KF_label_pre))
+            L_file.write("{} {:.2%} {:.2%} {:.2%}\n".format(step,PE_label_pre,AE_label_pre,KF_label_pre))
             print("step:{} PE_labele_pre:{:.2%} AE_label_pre:{:.2%} KF_label_pre:{:.2%}\n".format(step,PE_label_pre,AE_label_pre,KF_label_pre))
-            S_file.write("step:{} num_reid:{} num_tagper:{} select_pre_R:{:.2%} select_pre_T:{:.2%} AE_select_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step,num_reid,num_tagper, select_pre_R,select_pre_T,AE_select_pre,Ep_select_pre))
+            S_file.write("{} {} {:.2%} {:.2%} {:.2%} {:.2%} {}\n".format(step,num_reid, Ep_select_pre,select_pre_R,select_pre_T,AE_select_pre,num_tagper))
             print("step:{} num_reid:{} num_tagper:{} select_pre_R:{:.2%} select_pre_T:{:.2%} AE_select_pre:{:.2%} Ep_select_pre:{:.2%}\n".format(step,num_reid,num_tagper, select_pre_R,select_pre_T,AE_select_pre,Ep_select_pre))
 
 
@@ -163,8 +170,10 @@ def main(args):
             PE_pred_y, PE_pred_score, PE_label_pre = reid.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
             selected_idx_RR = reid.select_top_data(PE_pred_score, num_reid)
             Ep, Ep_select_pre = reid.move_unlabel_to_label_cpu(selected_idx_RR, PE_pred_y, u_data)
-            S_file.write("step:{} num_reid:{} Ep_select_pre:{:.2%}\n".format(step, num_reid, Ep_select_pre)) # Ep_select_pre 和select_pre_R 是一样的.
-            L_file.write("step:{} PE_label_pre:{:.2%} \n".format(step,  PE_label_pre)) # Ep_select_pre 和select_pre_R 是一样的.
+            S_file.write("{} {} {:.2%}\n".format(step, num_reid, Ep_select_pre)) # Ep_select_pre 和select_pre_R 是一样的.
+            print("step:{} num_reid:{} Ep_select_pre:{:.2%}\n".format(step, num_reid, Ep_select_pre)) # Ep_select_pre 和select_pre_R 是一样的.
+            L_file.write("{} {:.2%} \n".format(step,  PE_label_pre)) # Ep_select_pre 和select_pre_R 是一样的.
+            print("step:{} PE_label_pre:{:.2%} \n".format(step,  PE_label_pre)) # Ep_select_pre 和select_pre_R 是一样的.
 
             time2 = time.time()
             stage_time=time2-time1
@@ -176,7 +185,7 @@ def main(args):
             reid.train_atm06(train_seed_data, step, i, epochs=train_ep, step_size=args.step_size, init_lr=0.1)
             mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery) if args.ev else (0,0,0,0,0)
             P_reid.write(
-                "step:{} times:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
+                "{} {} {:.2%} {:.2%} {:.2%} {:.2%} {:.2%}\n".format(
                     int(step), i, mAP, top1, top5, top10, top20))
             print(
                 "step:{} times:{} mAP:{:.2%} top1:{:.2%} top5:{:.2%} top10:{:.2%} top20:{:.2%}\n".format(
@@ -189,7 +198,7 @@ def main(args):
         step_time = stage_time +train_time
         step_time_list.append(step_time)
         time_file.write(
-            "step:{} stage_time:{} train_time:{} step_time:{}\n".format(int(step), stage_time, train_time,step_time))
+            "{} {} {} {}\n".format(int(step), stage_time, train_time,step_time))
         print("stage_time =  %02d:%02d:%02.6f" % (changetoHSM(stage_time)))
         print("train_time =  %02d:%02d:%02.6f" % (changetoHSM(train_time)))
         print("step_time =  %02d:%02d:%02.6f" % (changetoHSM(step_time)))
@@ -246,4 +255,5 @@ if __name__ == '__main__':
 
     '''
     python3.6 atm07.py --total_step 6 --exp_order 9 --p 1 --baba 2 --max_frames 400 --kf_score_thred 0.4 --kf_label_thred 0.4
+    python3.6 atm07.py --total_step 6 --exp_order 10 --p 1 --baba 2 --max_frames 400 --kf_score_thred 0.3 --kf_label_thred 0.3
     '''
