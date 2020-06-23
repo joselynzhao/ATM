@@ -1,0 +1,2 @@
+python3.6 atm07.py --total_step 6 --exp_order 10 --p 1 --baba 2 --max_frames 400 --kf_score_thred 0.3 --kf_label_thred 0.3
+python3.6 atm07.py --total_step 6 --exp_order 11 --p 1 --baba 2 --max_frames 400 --kf_score_thred 0.2 --kf_label_thred 0.2
