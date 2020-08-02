@@ -94,11 +94,17 @@ def main(args):
     step_time_list = []
     # 开始循环
     last_train_times= 0
+    isresume =0
+    resume_step,resume_time,resume_step_mode   = -1,-1,-1
+    if  isresume:
+        resume_step, resume_time, resume_step_mode = 5,0,1
     for step in range(1,args.total_step+1):
         # 获取采样数量
+        if isresume and step<=resume_step:
+            continue
         num_reid = sampleing_number_curve(step)
         num_tagper = min(math.ceil(num_reid * args.baba),len(u_data))
-        train_ep,train_times = train_epoch(num_reid) if step>=args.total_step else args.epoch,1
+        train_ep,train_times = train_epoch(num_reid) if step>=args.total_step-2 else args.epoch,1
         # 克隆种子得到标签器
         stage_time = 0
         print("### step {} is training: num_reid={},num_tagper={}, train_ep={},train_times={}".format(step,num_reid,num_tagper,train_ep,train_times))
@@ -168,6 +174,9 @@ def main(args):
 
         elif iter_mode==1:
             time1= time.time()
+            if  isresume:
+                reid.resume(osp.join(reid_path, 'Dissimilarity_step_{}-{}.ckpt'.format(resume_step,resume_time)), resume_step)
+                last_train_times = resume_time
             PE_pred_y, PE_pred_score, PE_label_pre = reid.estimate_label_atm3(u_data, Ep, one_shot)  # 针对u_data进行标签估计
             selected_idx_RR = reid.select_top_data(PE_pred_score, num_reid)
             Ep, Ep_select_pre = reid.move_unlabel_to_label_cpu(selected_idx_RR, PE_pred_y, u_data)
@@ -182,7 +191,6 @@ def main(args):
         # 训练种子
         time1 = time.time()
         train_seed_data = Ep + one_shot
-
         for i in range(train_times):
             reid.train_atm06(train_seed_data, step, i, epochs=train_ep, step_size=args.step_size, init_lr=0.1)
             mAP, top1, top5, top10, top20 = reid.evaluate(dataset_all.query, dataset_all.gallery) if args.ev else (0,0,0,0,0)
@@ -241,7 +249,7 @@ if __name__ == '__main__':
 
 
     '''new'''
-    parser.add_argument('--p', type=int, default=1)  # 采样曲线的指数
+    parser.add_argument('--p', type=float, default=1)  # 采样曲线的指数
     parser.add_argument('--baba', type=float, default=2)  # tagper的训练数量reid的baba倍数,感觉2应该是上线了.
     parser.add_argument('--kf_score_thred',type=float,default=0.5)
     parser.add_argument('--kf_label_thred',type=float,default=0.5)
@@ -257,4 +265,5 @@ if __name__ == '__main__':
 
     '''
     python3.6 atm08.py --total_step 6 --exp_order 12 --p 1 --baba 2 --max_frames 400 --kf_score_thred 0.4 --kf_label_thred 0.4
+    python3.6 atm08.py --total_step 6 --exp_order 13 --p 1.5 --baba 2 --max_frames 400 --kf_score_thred 0.4 --kf_label_thred 0.4
     '''
